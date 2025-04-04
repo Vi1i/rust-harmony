@@ -1,0 +1,58 @@
+name: "Riverside Town"
+description: "A medium-sized town located near a river"
+tags: ["town", "riverside", "settlement"]
+rules:
+  - name: "Town Center"
+    priority: 100
+    conditions:
+      - type: TerrainType
+        terrain: Plain
+      - type: ElevationRange
+        min: 1
+        max: 5
+      - type: NearWater
+        distance: 3
+    actions:
+      - type: PlaceStructure
+        structure:
+          name: "Town Hall"
+          structure_type: "civic"
+          footprint:
+            - q: 0
+              r: 0
+              terrain: Wall
+            - q: 1
+              r: 0
+              terrain: Wall
+            - q: 0
+              r: 1
+              terrain: Wall
+          required_terrain: Plain
+          elevation_requirements:
+            min: 1
+            max: 5
+            relative_to_base: true
+          tags: ["important", "civic"]
+
+  - name: "Town Wall"
+    priority: 90
+    conditions:
+      - type: MinDistanceFrom
+        structure_type: "civic"
+        distance: 5
+    actions:
+      - type: GenerateWall
+        height: 3
+        material: Wall
+
+  - name: "Residential District"
+    priority: 80
+    conditions:
+      - type: TerrainType
+        terrain: Plain
+      - type: MinDistanceFrom
+        structure_type: "civic"
+        distance: 2
+    actions:
+      - type: ApplyTemplate
+        template_name: "residential_house"

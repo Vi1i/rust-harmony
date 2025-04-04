@@ -1,0 +1,135 @@
+name: "Mountain Castle"
+description: "A fortified castle complex built into a mountainside"
+tags: ["castle", "military", "settlement"]
+rules:
+  - name: "Castle Foundation"
+    priority: 100
+    conditions:
+      - type: And
+        conditions:
+          - type: TerrainType
+            terrain: Rough
+          - type: ElevationRange
+            min: 8
+            max: 15
+          - type: SlopeRange
+            min_degrees: 15.0
+            max_degrees: 45.0
+          - type: ViewDistance
+            min: 10
+          - type: WindExposure
+            min: 0.3
+            max: 0.8
+
+    actions:
+      - type: ModifyTerrain
+        radius: 5
+        operation:
+          type: Flatten
+          target: 10
+
+      - type: PlaceStructure
+        structure:
+          name: "Main Keep"
+          structure_type: "military"
+          footprint:
+            - q: 0
+              r: 0
+              terrain: Wall
+          required_terrain: Rough
+          elevation_requirements:
+            min: 8
+            max: 15
+            relative_to_base: true
+          generation_rules:
+            min_spacing: 3
+            max_count: 1
+            alignment:
+              type: Grid
+              spacing: 2
+            growth_pattern:
+              type: Outward
+          interior_layout:
+            rooms:
+              - size: [3, 4]
+                purpose: "great_hall"
+                required_connections: ["entrance", "kitchen"]
+              - size: [2, 2]
+                purpose: "kitchen"
+                required_connections: ["storage"]
+            corridors:
+              - start:
+                  q: 0
+                  r: 0
+                end:
+                  q: 2
+                  r: 0
+                width: 1
+            entrances:
+              - q: 0
+                r: 0
+          connections:
+            - position:
+                q: 0
+                r: 1
+              connection_type:
+                type: Door
+              required: true
+
+  - name: "Outer Walls"
+    priority: 90
+    conditions:
+      - type: MinDistanceFrom
+        structure_type: "military"
+        distance: 3
+    actions:
+      - type: GenerateWall
+        height: 5
+        material: Wall
+
+  - name: "Access Road"
+    priority: 85
+    conditions:
+      - type: Not
+        condition:
+          type: RoadAccess
+          distance: 10
+    actions:
+      - type: GenerateRoad
+        width: 2
+        material: Rough
+        style:
+          type: Winding
+          variation: 0.3
+
+  - name: "Guard Towers"
+    priority: 80
+    conditions:
+      - type: MaxDistanceFrom
+        structure_type: "military"
+        distance: 8
+    actions:
+      - type: PlaceStructureCluster
+        structure:
+          name: "Guard Tower"
+          structure_type: "military"
+          footprint:
+            - q: 0
+              r: 0
+              terrain: Wall
+        count: 4
+        spacing: 6
+        variation: true
+
+  - name: "Water Supply"
+    priority: 70
+    conditions:
+      - type: Not
+        condition:
+          type: NearWater
+          distance: 5
+    actions:
+      - type: CreateWaterFeature
+        feature_type:
+          type: Lake
+        size: 3

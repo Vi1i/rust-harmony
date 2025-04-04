@@ -1,0 +1,198 @@
+name: "Blacksmith Workshop"
+description: "A small blacksmith's workshop with forge, workspace, and storage"
+tags: ["craft", "commercial", "workshop", "essential"]
+rules:
+  - name: "Workshop Placement"
+    priority: 100
+    conditions:
+      - type: And
+        conditions:
+          - type: TerrainType
+            terrain: Plain
+          - type: NearWater
+            distance: 3
+          - type: MinDistanceFrom
+            structure_type: "residential"
+            distance: 2
+          - type: ResourceAvailable
+            resource: "wood"
+            amount: 10
+          - type: WindExposure
+            min: 0.4
+            max: 0.8
+
+    actions:
+      - type: SetTerrain
+        params:
+          terrain: Plain
+      - type: ModifyTerrain
+        params:
+          radius: 3
+          operation:
+            type: Flatten
+            target: 0
+      - type: PlaceStructure
+        params:
+          structure:
+            name: "Blacksmith Workshop"
+            structure_type: "workshop"
+            footprint:
+              # Main workshop building (3x2 hexes)
+              - q: 0
+                r: 0
+                terrain: Wall  # Stone walls
+              - q: 1
+                r: 0
+                terrain: Wall
+              - q: 0
+                r: 1
+                terrain: Wall
+              # Outdoor work area
+              - q: -1
+                r: 0
+                terrain: Rough  # Packed earth
+              - q: -1
+                r: 1
+                terrain: Rough
+            required_terrain: Plain
+            elevation_requirements:
+              min: 0
+              max: 2
+              relative_to_base: true
+            generation_rules:
+              min_spacing: 2
+              max_count: 1
+              alignment:
+                type: Grid
+                spacing: 1
+              growth_pattern:
+                type: Outward
+            interior_layout:
+              rooms:
+                - size: [2, 2]
+                  purpose: "forge"
+                  required_connections: ["entrance", "storage"]
+                - size: [1, 2]
+                  purpose: "storage"
+                  required_connections: ["forge"]
+              corridors:
+                - start:
+                    q: 0
+                    r: 0
+                    terrain: Plain
+                  end:
+                    q: 1
+                    r: 0
+                    terrain: Plain
+                  width: 1
+              entrances:
+                - q: 0
+                  r: 1
+                  terrain: Plain
+            connections:
+              - position:
+                  q: 0
+                  r: 1
+                  terrain: Plain
+                connection_type:
+                  type: Door
+                required: true
+              - position:
+                  q: -1
+                  r: 0
+                  terrain: Plain
+                connection_type:
+                  type: Path
+                required: true
+            tags: ["workshop", "blacksmith"]
+            variants: []
+            parent_template: null
+
+  - name: "Work Area Setup"
+    priority: 90
+    conditions:
+      - type: AdjacentTo
+        structure_type: "workshop"
+    actions:
+      - type: ModifyTerrain
+        params:
+          radius: 2
+          operation:
+            type: Flatten
+            target: 0
+
+      - type: SpawnResource
+        params:
+          resource_type: "anvil"
+          amount: 1
+          spread: 0
+
+  - name: "Water Access"
+    priority: 85
+    conditions:
+      - type: Not
+        condition:
+          type: NearWater
+          distance: 2
+    actions:
+      - type: CreateWaterFeature
+        params:
+          feature_type:
+            type: Pond
+          size: 1
+
+  - name: "Access Path"
+    priority: 80
+    conditions:
+      - type: Not
+        condition:
+          type: RoadAccess
+          distance: 5
+    actions:
+      - type: GenerateRoad
+        params:
+          width: 1
+          material: Rough
+          style:
+            type: Straight
+          to:
+            q: 0
+            r: 0
+            z: 0
+
+  - name: "Storage Area"
+    priority: 70
+    conditions:
+      - type: AdjacentTo
+        structure_type: "workshop"
+    actions:
+      - type: PlaceStructureCluster
+        params:
+          structure:
+            name: "Wood Pile"
+            structure_type: "storage"
+            footprint:
+              - q: 0
+                r: 0
+                terrain: Rough
+            tags: ["storage", "wood"]
+            variants: []
+            parent_template: null
+            required_terrain: Plain
+            elevation_requirements:
+              min: 0
+              max: 1
+              relative_to_base: true
+            generation_rules:
+              min_spacing: 1
+              max_count: 1
+              alignment:
+                type: Grid
+                spacing: 1
+              growth_pattern:
+                type: Outward
+            connections: []
+            interior_layout: null
+          count: 2
+          spacing: 1
+          variation: true

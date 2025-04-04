@@ -1,39 +1,42 @@
 use clap::{Parser, ValueEnum};
 use colors_transform::{Color, Rgb};
 use image::{ImageBuffer, Rgb as ImageRgb};
+use std::fs;
+use std::path::Path;
 
 #[allow(unused_imports)]
 use harmony::{
     WorldMap, MapGenerator, HexPosition, grid::TerrainType,
     map::{ChunkPosition, MapChunk, StructureType},
+    TemplateEngine,
 };
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Type of map to generate
     #[arg(value_enum)]
     map_type: MapTypes,
 
-    /// Size of the map (width and height in chunks)
     #[arg(short, long, default_value_t = 1)]
     size: i32,
 
-    /// Size of each chunk
     #[arg(short, long, default_value_t = 20)]
     chunk_size: i32,
 
-    /// Spacing between hexagons in pixels
     #[arg(short = 'g', long, default_value_t = 0)]
     spacing: i32,
 
-    /// Random seed for map generation
     #[arg(short = 'd', long)]
     seed: Option<u64>,
 
-    /// Output file name
     #[arg(short, long, default_value = "map.png")]
     output: String,
+
+    #[arg(short = 't', long)]
+    template: Option<String>,
+
+    #[arg(short = 'p', long)]
+    position: Option<String>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
@@ -41,12 +44,11 @@ enum MapTypes {
     World,
     Town,
     Forest,
+    Template,
 }
 
-const HEX_RADIUS: f32 = 20.0;  // Radius of the hex (distance from center to corner)
+const HEX_RADIUS: f32 = 20.0;
 const SQRT_3: f32 = 1.732_050_8;
-
-// Padding for the image
 const PADDING: f32 = 40.0;
 
 fn main() {
@@ -56,6 +58,7 @@ fn main() {
         MapTypes::World => generate_world_map(&cli),
         MapTypes::Town => generate_template_map(&cli, "town"),
         MapTypes::Forest => generate_template_map(&cli, "forest"),
+        MapTypes::Template => generate_from_template(&cli),
     }
 }
 
@@ -67,7 +70,6 @@ fn generate_world_map(cli: &Cli) {
     };
     let mut chunks = Vec::new();
 
-    // Generate chunks
     for x in 0..cli.size {
         for y in 0..cli.size {
             let pos = ChunkPosition { x, y };
@@ -76,6 +78,41 @@ fn generate_world_map(cli: &Cli) {
     }
 
     render_chunks(&chunks, cli);
+}
+
+fn generate_from_template(cli: &Cli) {
+    let template_path = cli.template.as_ref().expect("Template file is required");
+    let position = cli.position.as_ref()
+        .map(|p| {
+            let coords: Vec<i32> = p.split(',')
+                .map(|s| s.trim().parse().unwrap())
+                .collect();
+            HexPosition::new_2d(coords[0], coords[1])
+        })
+        .unwrap_or_else(|| HexPosition::new_2d(0, 0));
+
+    let template_content = fs::read_to_string(Path::new(template_path))
+        .expect("Failed to read template file");
+
+    let mut engine = TemplateEngine::new();
+    engine.load_template(&template_content)
+        .expect("Failed to load template");
+
+    let mut world = WorldMap::new(cli.chunk_size);
+    let chunk_pos = world.get_chunk_position_for_hex(&position);
+    let mut chunk = world.get_or_generate_chunk(chunk_pos).clone();
+
+    engine.apply_template(
+        Path::new(template_path)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        &mut chunk.grid,
+        &position,
+    );
+
+    render_chunks(&[chunk], cli);
 }
 
 fn generate_template_map(cli: &Cli, template: &str) {
@@ -91,7 +128,6 @@ fn generate_template_map(cli: &Cli, template: &str) {
 }
 
 fn render_chunks(chunks: &[MapChunk], cli: &Cli) {
-    // Calculate image dimensions with padding
     let hex_width = HEX_RADIUS * SQRT_3;
     let hex_height = HEX_RADIUS * 1.5;
     let gap = cli.spacing as f32;
@@ -105,7 +141,6 @@ fn render_chunks(chunks: &[MapChunk], cli: &Cli) {
         for (pos, cell) in chunk.grid.iter_cells() {
             let (center_x, center_y) = hex_to_pixel(pos, cli.spacing);
             
-            // Draw the hex
             draw_hex(
                 &mut img,
                 center_x,
@@ -115,7 +150,6 @@ fn render_chunks(chunks: &[MapChunk], cli: &Cli) {
                 cell.elevation,
             );
 
-            // Draw structures
             if let Some(structure) = chunk.structures.get(pos) {
                 draw_structure(&mut img, center_x, center_y, structure);
             }
@@ -127,15 +161,10 @@ fn render_chunks(chunks: &[MapChunk], cli: &Cli) {
 }
 
 fn hex_to_pixel(hex: &HexPosition, spacing: i32) -> (f32, f32) {
-    // For pointy-topped hexagons:
-    // Horizontal distance between centers = 2 * radius * cos(30°) = radius * √3
-    // Vertical distance between centers = radius * (1 + sin(60°)) = radius * 1.5
-    
     let hex_width = HEX_RADIUS * SQRT_3;
     let hex_height = HEX_RADIUS * 1.5;
     let gap = spacing as f32;
     
-    // Offset every other row by half a hex width
     let row_offset = if hex.r % 2 == 0 { 0.0 } else { (hex_width + gap) * 0.5 };
     let x = PADDING + (hex_width + gap) * hex.q as f32 + row_offset;
     let y = PADDING + (hex_height + gap) * hex.r as f32;
@@ -144,33 +173,30 @@ fn hex_to_pixel(hex: &HexPosition, spacing: i32) -> (f32, f32) {
 
 fn get_terrain_color(terrain: &TerrainType, elevation: i32) -> Rgb {
     let base_color = match terrain {
-        TerrainType::Plain => Rgb::from(120.0, 180.0, 80.0),  // Green
-        TerrainType::Rough => Rgb::from(140.0, 140.0, 100.0), // Brown-ish
+        TerrainType::Plain => Rgb::from(120.0, 180.0, 80.0),
+        TerrainType::Rough => Rgb::from(140.0, 140.0, 100.0),
         TerrainType::Water => {
             if elevation < 0 {
-                Rgb::from(40.0, 80.0, 150.0)   // Deep water
+                Rgb::from(40.0, 80.0, 150.0)
             } else {
-                Rgb::from(80.0, 140.0, 200.0)  // Shallow water
+                Rgb::from(80.0, 140.0, 200.0)
             }
         },
-        TerrainType::Wall => Rgb::from(100.0, 100.0, 100.0),  // Gray
-        TerrainType::Sand => Rgb::from(240.0, 220.0, 160.0),  // Sand color
-        TerrainType::Snow => Rgb::from(250.0, 250.0, 250.0),  // White
-        TerrainType::Swamp => Rgb::from(80.0, 100.0, 70.0),   // Dark green
-        TerrainType::Lava => Rgb::from(200.0, 50.0, 0.0),     // Red-orange
+        TerrainType::Wall => Rgb::from(100.0, 100.0, 100.0),
+        TerrainType::Sand => Rgb::from(240.0, 220.0, 160.0),
+        TerrainType::Snow => Rgb::from(250.0, 250.0, 250.0),
+        TerrainType::Swamp => Rgb::from(80.0, 100.0, 70.0),
+        TerrainType::Lava => Rgb::from(200.0, 50.0, 0.0),
     };
 
-    // Apply elevation-based shading
     let mut color = base_color;
     
-    // Darken valleys and brighten peaks
     let elevation_factor = if elevation >= 0 {
-        1.0 + (elevation as f32 * 0.15)  // Peaks get brighter
+        1.0 + (elevation as f32 * 0.15)
     } else {
-        1.0 / (1.0 - (elevation as f32 * 0.1))  // Valleys get darker
+        1.0 / (1.0 - (elevation as f32 * 0.1))
     };
 
-    // Add a slight blue tint to high elevations (atmospheric effect)
     if elevation > 5 {
         let blue_tint = (elevation - 5) as f32 * 0.05;
         color = Rgb::from(
@@ -180,7 +206,6 @@ fn get_terrain_color(terrain: &TerrainType, elevation: i32) -> Rgb {
         );
     }
 
-    // Apply the elevation factor
     Rgb::from(
         (color.get_red() * elevation_factor).min(255.0),
         (color.get_green() * elevation_factor).min(255.0),
@@ -198,26 +223,22 @@ fn draw_hex(
 ) {
     let points = get_hex_points(center_x, center_y, spacing);
     
-    // Calculate shading based on elevation
     let shade_factor = if elevation >= 0 {
-        1.0 - (elevation as f32 * 0.05).min(0.3)  // Higher elevation = darker edges
+        1.0 - (elevation as f32 * 0.05).min(0.3)
     } else {
-        1.0 + (elevation as f32 * 0.05).max(-0.3)  // Lower elevation = lighter edges
+        1.0 + (elevation as f32 * 0.05).max(-0.3)
     };
 
-    // Draw filled hexagon with gradient
     for y in (center_y - HEX_RADIUS) as i32..(center_y + HEX_RADIUS) as i32 {
         for x in (center_x - HEX_RADIUS) as i32..(center_x + HEX_RADIUS) as i32 {
             if x < 0 || y < 0 || x >= img.width() as i32 || y >= img.height() as i32 {
                 continue;
             }
             if point_in_hexagon((x as f32, y as f32), &points) {
-                // Calculate distance from center for gradient effect
                 let dx = x as f32 - center_x;
                 let dy = y as f32 - center_y;
                 let dist = (dx * dx + dy * dy).sqrt() / HEX_RADIUS;
                 
-                // Create gradient effect based on elevation
                 let gradient = 1.0 - (dist * shade_factor);
                 
                 img.put_pixel(
@@ -233,7 +254,6 @@ fn draw_hex(
         }
     }
 
-    // Draw elevation contour lines
     if elevation != 0 {
         let contour_points = get_hex_points(center_x, center_y, spacing - elevation.abs() as i32);
         draw_hex_outline(img, &contour_points, color, 0.5);
@@ -247,12 +267,11 @@ fn draw_structure(
     structure: &StructureType,
 ) {
     let color = match structure {
-        StructureType::Building(_) => Rgb::from(200.0, 50.0, 50.0),   // Red
-        StructureType::Vegetation(_) => Rgb::from(50.0, 150.0, 50.0), // Green
-        StructureType::Landmark(_) => Rgb::from(200.0, 200.0, 50.0),  // Yellow
+        StructureType::Building(_) => Rgb::from(200.0, 50.0, 50.0),
+        StructureType::Vegetation(_) => Rgb::from(50.0, 150.0, 50.0),
+        StructureType::Landmark(_) => Rgb::from(200.0, 200.0, 50.0),
     };
 
-    // Draw a small filled circle for the structure
     let radius = HEX_RADIUS * 0.2;
     for dy in -radius as i32..=radius as i32 {
         for dx in -radius as i32..=radius as i32 {
@@ -278,16 +297,19 @@ fn draw_structure(
     }
 }
 
-fn get_hex_points(center_x: f32, center_y: f32, _spacing: i32) -> [(f32, f32); 6] {
-    let mut points = [(0.0, 0.0); 6];
-    for i in 0..6 {
-        let angle = std::f32::consts::PI / 3.0 * i as f32 + std::f32::consts::PI / 6.0; // Rotate 30 degrees
-        points[i] = (
-            center_x + HEX_RADIUS * angle.cos(),
-            center_y + HEX_RADIUS * angle.sin(),
-        );
-    }
-    points
+fn get_hex_points(center_x: f32, center_y: f32, spacing: i32) -> [(f32, f32); 6] {
+    let size = HEX_RADIUS + spacing as f32;
+    let width = size * SQRT_3;
+    let height = size * 1.5;
+    
+    [
+        (center_x + width * 0.5, center_y - height * 0.25),
+        (center_x + width * 0.5, center_y + height * 0.25),
+        (center_x, center_y + height * 0.5),
+        (center_x - width * 0.5, center_y + height * 0.25),
+        (center_x - width * 0.5, center_y - height * 0.25),
+        (center_x, center_y - height * 0.5),
+    ]
 }
 
 fn point_in_hexagon(point: (f32, f32), vertices: &[(f32, f32); 6]) -> bool {

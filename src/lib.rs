@@ -11,12 +11,15 @@ pub mod grid;
 pub mod dice;
 pub mod item;
 pub mod map;
+pub mod template;
+pub mod structure;
 
 // Re-export commonly used types
 pub use character::Character;
 pub use combat::Combat;
 pub use grid::{HexGrid, TerrainType};
 pub use map::{WorldMap, MapGenerator, BiomeType};
+pub use template::{Template, TemplateEngine};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct HexPosition {
